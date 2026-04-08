@@ -89,6 +89,16 @@ def load_jupyter_server_extension(server_app):
           ),
           (url_maker('/api/colab/drive'), _handlers.DriveHandler),
           (url_maker('/api/colab/build-info'), _handlers.BuildInfoHandler),
+          (
+              url_maker('/api/colab/agent'),
+              _handlers.AgentHandler,
+              {'kernel_manager': app.settings['kernel_manager']},
+          ),
+          (
+              url_maker('/api/colab/agent/create'),
+              _handlers.AgentCreateHandler,
+              {'kernel_manager': app.settings['kernel_manager']},
+          ),
       ],
   )
   try:

@@ -19,6 +19,7 @@ import subprocess
 
 from google.colab import _serverextension
 from google.colab import drive
+from google.colab._serverextension import _agent
 from google.colab._serverextension import _resource_monitor
 from jupyter_server.base import handlers
 import tornado
@@ -79,6 +80,71 @@ class DriveHandler(handlers.APIHandler):
             'dfs': drive_status,
         })
     )
+
+
+class AgentHandler(handlers.APIHandler):
+  """Handles requests for AI agent code generation."""
+
+  def initialize(self, kernel_manager):
+    self._kernel_manager = kernel_manager
+
+  @tornado.web.authenticated
+  async def post(self, *unused_args, **unused_kwargs):
+
+    try:
+      # Parse prompt from request JSON payload
+      req_data = json.loads(self.request.body.decode('utf-8'))
+      prompt = req_data.get('prompt', '')
+      kernel_id = req_data.get('kernel_id')
+      context = req_data.get('context', '')
+      # Default to a generic session ID if not provided.
+      session_id = req_data.get('session_id', 'session_1')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+      prompt = ''
+      context = ''
+      kernel_id = None
+      session_id = None
+
+    try:
+      agent_response = await _agent.send_message(
+          prompt=prompt,
+          context=context,
+          kernel_manager=self._kernel_manager,
+          kernel_id=kernel_id,
+          session_id=session_id,
+      )
+    except (IOError, ValueError, TypeError, json.JSONDecodeError) as e:
+      self.set_header('Content-Type', 'application/json')
+      error_msg = f'{type(e).__name__} occurred during agent execution.'
+      self.finish(
+          _XSSI_PREFIX
+          + json.dumps({'reply': 'An error occurred.', 'error': error_msg})
+      )
+      return
+
+    self.set_header('Content-Type', 'application/json')
+    self.finish(_XSSI_PREFIX + json.dumps(agent_response))
+
+
+class AgentCreateHandler(handlers.APIHandler):
+  """Handles requests for AI agent session creation."""
+
+  def initialize(self, kernel_manager):
+    self._kernel_manager = kernel_manager
+
+  @tornado.web.authenticated
+  async def post(self, *unused_args, **unused_kwargs):
+    try:
+      req_data = json.loads(self.request.body.decode('utf-8'))
+      session_id = req_data.get('session_id', 'session_1')
+      instructions = req_data.get('instructions')
+    except (json.JSONDecodeError, UnicodeDecodeError):
+      session_id = 'session_1'
+      instructions = None
+
+    _agent.create_session(session_id, instructions)
+    self.set_header('Content-Type', 'application/json')
+    self.finish(_XSSI_PREFIX + json.dumps({'status': 'ok'}))
 
 
 class BuildInfoHandler(handlers.APIHandler):
